@@ -1,0 +1,16 @@
+# Python 虚拟环境
+.venv/
+
+# Python 缓存
+__pycache__/
+*.pyc
+
+# PyCharm 配置
+.idea/
+
+# 环境变量及 API 密钥
+.env
+.env.*
+
+# 本地任务数据
+data/tasks.json
