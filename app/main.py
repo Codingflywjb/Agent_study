@@ -4,7 +4,7 @@ logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
                     )
 
-from app.task_manager import get_all_tasks, add_task,complete_task,delete_task
+from app.task_manager import get_all_tasks, add_task,complete_task,delete_task,validate_task_id
 
 def main():
     while True:
@@ -32,8 +32,9 @@ def main():
         elif choice=="3":
             try:
                 task_id=int(input("请输入所完成任务的id:").strip())
+                validate_task_id(task_id)
             except ValueError:
-                print("error")
+                print("id输入不合法")
                 continue
             success=complete_task(task_id)
             if success:
@@ -43,8 +44,9 @@ def main():
         elif choice=="4":
             try:
                 task_id =int(input("请输入所完成任务的id:").strip())
+                validate_task_id(task_id)
             except ValueError:
-                print("error")
+                print("id输入不合法")
                 continue
             success=delete_task(task_id)
             if success:
