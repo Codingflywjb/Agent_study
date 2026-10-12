@@ -1,6 +1,9 @@
 import logging
 
 from typing import Optional
+
+from fastapi import FastAPI
+
 from app.storage import load_tasks, save_tasks
 
 logger = logging.getLogger(__name__)
@@ -20,8 +23,9 @@ def find_task_by_id(tasks:list[dict],task_id:int)->Optional[dict]:
             return task
     return None
 
-def add_task(title:str) -> None:
-    if not title.strip():
+def add_task(title:str) -> dict:
+    title=title.strip()
+    if not title:
         raise ValueError("任务名称不能为空")
 
     tasks = load_tasks()
@@ -35,7 +39,7 @@ def add_task(title:str) -> None:
     tasks.append(new_task)
     save_tasks(tasks)
     logger.info("任务创建成功,id=%d",new_id)
-
+    return new_task
 
 
 def complete_task(task_id:int)->bool:
@@ -54,8 +58,10 @@ def complete_task(task_id:int)->bool:
 
 
 def delete_task(task_id:int)->bool:
-    validate_task_id(task_id)
-
+    try:
+        validate_task_id(task_id)
+    except ValueError:
+        print("id不合法")
     tasks = load_tasks()
     task=find_task_by_id(tasks,task_id)
     if task is None:
@@ -67,3 +73,17 @@ def delete_task(task_id:int)->bool:
     logger.info("用户删除任务,id=%d", task_id)
     return True
 
+def update_task_completion(task_id: int,completed: bool) -> dict | None:
+    try:
+        validate_task_id(task_id)
+    except ValueError:
+        print("id不合法")
+    tasks = load_tasks()
+    task=find_task_by_id(tasks,task_id)
+    if task is None:
+        logger.warning("找不到该任务,id=%d", task_id)
+        return None
+    task["completed"]=completed
+    logger.info("用户修改了id=%d任务的完成情况", task_id)
+    save_tasks(tasks)
+    return task
