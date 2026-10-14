@@ -4,6 +4,7 @@
 # Python 缓存
 __pycache__/
 *.pyc
+.pytest_cache/
 
 # PyCharm 配置
 .idea/
@@ -13,5 +14,6 @@ __pycache__/
 .env.*
 
 # 本地任务数据
-data/tasks.json
 data/*.db
+data/*.db-*
+data/tasks.json
