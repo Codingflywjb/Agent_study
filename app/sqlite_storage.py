@@ -47,3 +47,34 @@ def delete_task(task_id:int)->bool:
         return affected_rows > 0
     finally:
         conn.close()
+
+def row_to_task(row:tuple|None)->dict|None:
+    if row is None:
+        return None
+    task={
+        "id":row[0],
+        "title":row[1],
+        "completed":bool(row[2])
+    }
+    return task
+
+def get_all_tasks()->list[dict]:
+    conn=sqlite3.connect(DB_PATH)
+    try:
+        cursor=conn.cursor()
+        cursor.execute("SELECT id,title,completed FROM tasks order by id asc")
+        rows=cursor.fetchall()
+        tasks=[]
+        for row in rows:
+            tasks.append(row_to_task(row))
+        return tasks
+    finally:
+        conn.close()
+
+if __name__=="__main__":
+    create_task("学习Python")
+    create_task("学习FastAPI")
+
+    tasks = get_all_tasks()
+
+    print(tasks)

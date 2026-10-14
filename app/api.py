@@ -1,4 +1,5 @@
 from fastapi import FastAPI,HTTPException,Path
+from app import sqlite_storage
 from app.task_manager import get_all_tasks, find_task_by_id, add_task, update_task_completion, delete_task
 from pydantic import BaseModel,Field,field_validator
 
@@ -14,7 +15,7 @@ class TaskCreate(BaseModel):
         return value
 
 class TaskUpdate(BaseModel):
-    complete: bool
+    completed: bool
 
 app = FastAPI()
 
@@ -34,13 +35,13 @@ def health_check():
 
 @app.get("/tasks")
 def list_tasks():
-    return get_all_tasks()
+    return sqlite_storage.get_all_tasks()
 
 
 @app.get("/tasks/{task_id}")
-def get_task(task_id:int):
-    tasks = list_tasks()
-    task = find_task_by_id(tasks, task_id)
+def get_task(task_id:int = Path(gt=0)):
+    row = sqlite_storage.get_task_by_id(task_id)
+    task = sqlite_storage.row_to_task(row)
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
     return task
@@ -49,7 +50,11 @@ def get_task(task_id:int):
 @app.post("/tasks",status_code=201)
 def create_task(task:TaskCreate):
     title=task.title
-    new_task=add_task(title=title)
+    new_id=sqlite_storage.create_task(title)
+    new_row=sqlite_storage.get_task_by_id(new_id)
+    new_task=sqlite_storage.row_to_task(new_row)
+    if new_task is None:
+        raise HTTPException(status_code=500, detail="Failed to retrieve newly created task")
     return new_task
 
 
@@ -61,15 +66,19 @@ def preview_task(task:TaskCreate):
     }
 
 @app.patch("/tasks/{task_id}")
-def patch_task(update:TaskUpdate,task_id:int=Path(gt=0)):
-    complete=update.complete
-    task =update_task_completion(task_id,complete)
-    if task is None:
+def update_task_api(task:TaskUpdate,task_id:int=Path(gt=0)):
+    complete=task.completed
+    result=sqlite_storage.update_task_completion(task_id,complete)
+    if not result:
         raise HTTPException(status_code=404, detail="Task not found")
-    return task
+    row = sqlite_storage.get_task_by_id(task_id)
+    updated_task = sqlite_storage.row_to_task(row)
+    if updated_task is None:
+        raise HTTPException(status_code=500, detail="Failed to retrieve updated task")
+    return updated_task
 
 @app.delete("/tasks/{task_id}",status_code=204)
 def remove_task_api(task_id:int=Path(gt=0)):
-    result=delete_task(task_id)
+    result=sqlite_storage.delete_task(task_id)
     if not result:
         raise HTTPException(status_code=404, detail="Task not found")
