@@ -2,6 +2,12 @@ from fastapi import FastAPI,HTTPException,Path
 from app import sqlite_storage
 from app.task_manager import get_all_tasks, find_task_by_id, add_task, update_task_completion, delete_task
 from pydantic import BaseModel,Field,field_validator
+from contextlib import asynccontextmanager
+import logging
+
+logger = logging.getLogger("uvicorn.error")
+
+
 
 class TaskCreate(BaseModel):
     title: str = Field(min_length=1,max_length=100)
@@ -17,7 +23,19 @@ class TaskCreate(BaseModel):
 class TaskUpdate(BaseModel):
     completed: bool
 
-app = FastAPI()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    logger.info("开始初始化数据库")
+    try:
+        sqlite_storage.init_db()
+    except Exception:
+        logger.exception("数据库初始化失败")
+        raise
+    logger.info("数据库初始化成功")
+    yield
+    logger.info("应用正在关闭")
+
+app = FastAPI(lifespan=lifespan)
 
 
 @app.get("/")

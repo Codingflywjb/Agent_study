@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 from app.api import app
 from app import storage,sqlite_storage
 
+
 client = TestClient(app)
 
 @pytest.fixture
@@ -114,3 +115,35 @@ def test_delete_nonexistent_task(sample_tasks):
     assert response.status_code == 404
     saved_tasks = sqlite_storage.get_all_tasks()
     assert saved_tasks == sample_tasks
+
+def test_lifespan_initializes_database(tmp_path, monkeypatch):
+    db_path = tmp_path / "new_data" / "tasks.db"
+
+    monkeypatch.setattr(
+        sqlite_storage,
+        "DB_PATH",
+        db_path
+    )
+
+    assert not db_path.exists()
+    with TestClient(app) as test_client:
+        assert db_path.is_file()
+        response = test_client.get("/tasks")
+        assert response.status_code == 200
+        data = response.json()
+        assert data == []
+
+
+
+def test_lifespan_init_failure(monkeypatch):
+    def fake_init_db():
+        raise RuntimeError("模拟数据库初始化失败")
+    monkeypatch.setattr(
+        sqlite_storage,
+        "init_db",
+        fake_init_db
+    )
+    with pytest.raises(RuntimeError,match="模拟数据库初始化失败"):
+        with TestClient(app):
+            pass
+

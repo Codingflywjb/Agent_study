@@ -60,3 +60,45 @@ def test_delete_task(test_db):
 def test_delete_nonexistent_task(test_db):
     result = sqlite_storage.delete_task(999)
     assert result is False
+
+def test_init_db_creates_database(tmp_path, monkeypatch):
+    db_path = tmp_path / "new_data" / "tasks.db"
+
+    monkeypatch.setattr(
+        sqlite_storage,
+        "DB_PATH",
+        db_path
+    )
+
+    assert not db_path.exists()
+
+    sqlite_storage.init_db()
+
+    assert db_path.is_file()
+
+    conn = sqlite3.connect(db_path)
+    try:
+        cursor = conn.cursor()
+        cursor.execute("Select name from sqlite_master where type='table' and name='tasks'")
+        result = cursor.fetchone()
+        assert result is not None
+    finally:
+        conn.close()
+
+
+def test_init_db_idempotent(tmp_path, monkeypatch):
+    db_path = tmp_path / "tasks.db"
+
+    monkeypatch.setattr(
+        sqlite_storage,
+        "DB_PATH",
+        db_path
+    )
+    sqlite_storage.init_db()
+    new_id=sqlite_storage.create_task("test")
+    sqlite_storage.init_db()
+    result = sqlite_storage.get_task_by_id(new_id)
+    assert result is not None
+    assert result[0] == new_id
+    assert result[1]=="test"
+    assert result[2]==0
