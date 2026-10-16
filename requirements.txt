@@ -6,3 +6,4 @@ python-dotenv==1.2.4
 requests==2.34.2
 httpx2==2.13.1
 pytest==9.1.1
+openai==3.31.0
