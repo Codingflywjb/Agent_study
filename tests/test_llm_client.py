@@ -83,3 +83,46 @@ def test_ask_llm_with_history(monkeypatch):
     assert result == "FastAPI很适合开发API"
     assert sent_messages[-1]["content"] == "它有什么优点？"
     fake_client.chat.completions.create.assert_called_once()
+
+def test_ask_llm_stream_success(monkeypatch,capsys):
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "fake-test-key")
+    fake_client = MagicMock()
+
+    chunk1=MagicMock()
+    chunk1.choices[0].delta.content = "你好,"
+
+    chunk2 = MagicMock()
+    chunk2.choices[0].delta.content = "我是DeepSeek!"
+
+    fake_stream = iter([chunk1,chunk2])
+
+    fake_client.chat.completions.create.return_value = fake_stream
+    monkeypatch.setattr(llm_client, "OpenAI", MagicMock(return_value=fake_client))
+    result=llm_client.ask_llm_stream("你好")
+    assert result == "你好,我是DeepSeek!"
+    captured = capsys.readouterr()
+    assert captured.out == "你好,我是DeepSeek!\n"
+    kwargs = fake_client.chat.completions.create.call_args.kwargs
+    assert kwargs["stream"] is True
+    fake_client.chat.completions.create.assert_called_once()
+
+def test_ask_llm_stream_connection_error(monkeypatch,capsys):
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "fake-test-key")
+    fake_client = MagicMock()
+    chunk=MagicMock()
+    chunk.choices[0].delta.content = "部分回答"
+
+    def broken_stream():
+        yield chunk
+        raise APIConnectionError(
+            request=Request("POST","https://api.deepseek.com")
+        )
+    fake_client.chat.completions.create.return_value = broken_stream()
+    monkeypatch.setattr(llm_client, "OpenAI", MagicMock(return_value=fake_client))
+    with pytest.raises(llm_client.LLMServiceError) as exc_info:
+        llm_client.ask_llm_stream("你好")
+    captured = capsys.readouterr()
+    assert "部分回答" in captured.out
+    assert "网络连接异常" in str(exc_info.value)
+    assert isinstance(exc_info.value.__cause__, APIConnectionError)
+    fake_client.chat.completions.create.assert_called_once()

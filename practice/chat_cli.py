@@ -1,4 +1,4 @@
-from practice.llm_client import ask_llm,LLMServiceError
+from practice.llm_client import ask_llm_stream,LLMServiceError
 
 def main() -> None:
     history : list[dict] = []
@@ -14,8 +14,7 @@ def main() -> None:
             print("输入不能为空")
             continue
         try:
-            response = ask_llm(user_input,history)
-            print(response)
+            response = ask_llm_stream(user_input,history)
             new_messages=[
                 {"role":"user","content":user_input},
                 {"role":"assistant","content":response}

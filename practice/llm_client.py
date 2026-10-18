@@ -2,7 +2,7 @@
 import os
 
 from openai import (OpenAI,APITimeoutError,APIConnectionError,AuthenticationError,RateLimitError,APIStatusError,)
-
+from practice.llm_stream import consume_stream
 from app.config import MODEL_NAME
 from practice.llm_messages import (
     build_chat_messages,
@@ -55,6 +55,47 @@ def ask_llm(user_input: str,history:list[dict] | None = None) -> str:
     return content
 
 
+def ask_llm_stream(user_input: str,history: list[dict] | None = None) -> str:
+    if history is None:
+        history = []
+    messages = build_chat_messages(history,user_input)
+
+    api_key = os.environ.get("DEEPSEEK_API_KEY")
+    if not api_key:
+        raise ValueError("无法找到api_key")
+    client=OpenAI(
+        api_key=api_key,
+        base_url="https://api.deepseek.com",
+        timeout=30.0,
+        max_retries=0,
+    )
+    try:
+
+        response = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=messages,
+            extra_body={
+                "thinking": {"type": "disabled"}
+            },
+            stream=True
+        )
+        # TODO 6：把流式响应交给 consume_stream()
+        # 返回最终拼接好的字符串
+        answer = consume_stream(response)
+        return answer
+
+    # TODO 7：保留原有的 SDK 异常处理分支
+    # 包括认证、限流、超时、网络和 HTTP 状态错误
+    except APITimeoutError as e:
+        raise LLMServiceError("Deepseek请求超时") from e
+    except AuthenticationError as e:
+        raise LLMServiceError("Deepseek身份认证失败") from e
+    except RateLimitError as e:
+        raise LLMServiceError("Deepseek请求过于频繁") from e
+    except APIConnectionError as e:
+        raise LLMServiceError("Deepseek网络连接异常") from e
+    except APIStatusError as e:
+        raise LLMServiceError(f"Deepseek其他HTTP请求失败，状态码：{e.status_code}") from e
 
 if __name__ == "__main__":
     question = input("请输入你的问题：")
