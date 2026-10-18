@@ -5,7 +5,7 @@ from openai import (OpenAI,APITimeoutError,APIConnectionError,AuthenticationErro
 
 from app.config import MODEL_NAME
 from practice.llm_messages import (
-    build_messages,
+    build_chat_messages,
     extract_llm_content,
 )
 
@@ -14,9 +14,10 @@ class LLMServiceError(RuntimeError):
     """大模型服务调用失败。"""
 
 
-def ask_llm(user_input: str) -> str:
-
-    messages = build_messages(user_input)
+def ask_llm(user_input: str,history:list[dict] | None = None) -> str:
+    if history is None:
+        history = []
+    messages = build_chat_messages(history,user_input)
     api_key = os.environ.get("DEEPSEEK_API_KEY")
     if not api_key:
         raise ValueError("无法找到api_key")

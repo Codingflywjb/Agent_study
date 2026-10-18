@@ -26,4 +26,19 @@ def extract_llm_content(response:dict) -> str:
         raise ValueError("没有有效文本")
     return content
 
+def build_chat_messages(history:list[dict],user_input:str) -> list[dict]:
+    user_input = user_input.strip()
+    if not user_input:
+        raise ValueError("输入不能为空!")
+    messages=[
+        {
+            "role":"system",
+            "content": "你是一名专业的Python编程助手"
+        }
+    ]
+    history_mes=history.copy()
+    messages.extend(history_mes)
+    messages.append({"role":"user","content":user_input})
+    return messages
+
 
