@@ -13,14 +13,13 @@ from _collections_abc import Iterator
 class LLMServiceError(RuntimeError):
     """大模型服务调用失败。"""
 
+class LLMConfigurationError(ValueError):
+    """LLM 服务配置不正确。"""
 
-def ask_llm(user_input: str,history:list[dict] | None = None) -> str:
-    if history is None:
-        history = []
-    messages = build_chat_messages(history,user_input)
+def _create_deepseek_client() -> OpenAI:
     api_key = os.environ.get("DEEPSEEK_API_KEY")
     if not api_key:
-        raise ValueError("无法找到api_key")
+        raise LLMConfigurationError("未配置 DEEPSEEK_API_KEY")
 
     client = OpenAI(
         api_key=api_key,
@@ -28,7 +27,14 @@ def ask_llm(user_input: str,history:list[dict] | None = None) -> str:
         timeout=30.0,
         max_retries=0,
     )
+    return client
 
+def ask_llm(user_input: str,history:list[dict] | None = None) -> str:
+    if history is None:
+        history = []
+    messages = build_chat_messages(history,user_input)
+
+    client=_create_deepseek_client()
     try:
         response = client.chat.completions.create(
             model=MODEL_NAME,
@@ -60,15 +66,7 @@ def ask_llm_stream(user_input: str,history: list[dict] | None = None) -> str:
         history = []
     messages = build_chat_messages(history,user_input)
 
-    api_key = os.environ.get("DEEPSEEK_API_KEY")
-    if not api_key:
-        raise ValueError("无法找到api_key")
-    client=OpenAI(
-        api_key=api_key,
-        base_url="https://api.deepseek.com",
-        timeout=30.0,
-        max_retries=0,
-    )
+    client = _create_deepseek_client()
     try:
 
         response = client.chat.completions.create(
@@ -101,15 +99,7 @@ def iter_llm_chunks(user_input: str,history: list[dict] | None = None) -> Iterat
     if history is None:
         history = []
     messages = build_chat_messages(history,user_input)
-    api_key = os.environ.get("DEEPSEEK_API_KEY")
-    if not api_key:
-        raise ValueError("无法找到api_key")
-    client = OpenAI(
-        api_key=api_key,
-        base_url="https://api.deepseek.com",
-        timeout=30.0,
-        max_retries=0,
-    )
+    client = _create_deepseek_client()
     try:
         stream = client.chat.completions.create(
             model=MODEL_NAME,
@@ -119,12 +109,20 @@ def iter_llm_chunks(user_input: str,history: list[dict] | None = None) -> Iterat
             },
             stream=True
         )
+        has_valid_content = False
+
         for chunk in stream:
             if not chunk.choices:
                 continue
             content = chunk.choices[0].delta.content
-            if content:
-                yield content
+            if not content:
+                continue
+            if content.strip():
+                has_valid_content = True
+            yield content
+
+        if not has_valid_content:
+            raise LLMServiceError("模型未返回有效内容")
     except APITimeoutError as e:
         raise LLMServiceError("Deepseek请求超时") from e
     except AuthenticationError as e:

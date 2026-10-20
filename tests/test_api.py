@@ -281,3 +281,17 @@ def test_chat_stream_invalid_message(monkeypatch):
     response = client.post("/chat/stream",json=payload)
     assert response.status_code == 422
     fake_stream.assert_not_called()
+
+def test_chat_stream_missing_key(monkeypatch):
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    payload = {
+        "message": "你好",
+        "history": []
+    }
+    response = client.post("/chat/stream",json=payload)
+    assert response.status_code == 200
+    assert "event:error" in response.text
+    assert "event:done" not in response.text
+    events = response.text.strip().split("\n\n")
+    error_data = json.loads(events[0].split("data:",1)[1])
+    assert error_data["detail"] == "模型服务暂时不可用"

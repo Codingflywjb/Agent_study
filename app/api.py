@@ -7,7 +7,7 @@ from app.task_manager import get_all_tasks, find_task_by_id, add_task, update_ta
 from pydantic import BaseModel,Field,field_validator
 from contextlib import asynccontextmanager
 from typing import Literal
-from practice.llm_client import ask_llm,LLMServiceError,iter_llm_chunks
+from practice.llm_client import ask_llm,LLMServiceError,iter_llm_chunks,LLMConfigurationError
 import logging
 
 logger = logging.getLogger("uvicorn.error")
@@ -80,7 +80,11 @@ def chat(request:ChatRequest):
         return ChatResponse(answer=response)
     except LLMServiceError as e:
         raise HTTPException(status_code=502,detail="模型服务暂时不可用") #用HTTPException将模型服务错误转换成HTTP 502
-
+    except LLMConfigurationError:
+        raise HTTPException(
+            status_code=503,
+            detail="模型服务暂时不可用"
+        )
 
 
 
@@ -164,6 +168,6 @@ def chat_stream(request:ChatRequest):
                 )
                 yield f'event:token\ndata:{data}\n\n'
             yield "event:done\ndata:{}\n\n"
-        except LLMServiceError:
+        except (LLMServiceError,LLMConfigurationError):
             yield 'event:error\ndata:{"detail": "模型服务暂时不可用"}\n\n'
     return StreamingResponse(event_generator(),media_type="text/event-stream")

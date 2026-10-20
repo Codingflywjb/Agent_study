@@ -195,3 +195,47 @@ def test_iter_llm_chunks_connection_error(monkeypatch):
        next(generator)
     assert "网络连接异常" in str(exc_info.value)
     assert isinstance(exc_info.value.__cause__, APIConnectionError)
+
+def test_iter_llm_chunks_empty_stream(monkeypatch):
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "fake-test-key")
+
+    fake_client = MagicMock()
+    fake_stream = iter([])
+    fake_client.chat.completions.create.return_value = fake_stream
+
+    monkeypatch.setattr(llm_client, "OpenAI", MagicMock(return_value=fake_client))
+
+    with pytest.raises(llm_client.LLMServiceError,match="模型未返回有效内容"):
+        list(llm_client.iter_llm_chunks("你好"))
+
+def test_iter_llm_chunks_skips_none_content(monkeypatch):
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "fake-test-key")
+    fake_client = MagicMock()
+    chunk1 = MagicMock()
+    chunk1.choices[0].delta.content = None
+    chunk2 = MagicMock()
+    chunk2.choices[0].delta.content = "你好"
+    fake_stream = iter([chunk1, chunk2])
+    fake_client.chat.completions.create.return_value = fake_stream
+    monkeypatch.setattr(llm_client, "OpenAI", MagicMock(return_value=fake_client))
+    generator=llm_client.iter_llm_chunks("你好")
+    results = list(generator)
+    assert results == ["你好"]
+
+def test_iter_llm_chunks_preserves_spaces(monkeypatch):
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "fake-test-key")
+    fake_client = MagicMock()
+
+    chunk1 = MagicMock()
+    chunk1.choices[0].delta.content = "Hello"
+    chunk2 = MagicMock()
+    chunk2.choices[0].delta.content = " "
+    chunk3 = MagicMock()
+    chunk3.choices[0].delta.content = "World"
+    fake_stream = iter([chunk1, chunk2, chunk3])
+    fake_client.chat.completions.create.return_value = fake_stream
+    monkeypatch.setattr(llm_client, "OpenAI", MagicMock(return_value=fake_client))
+    generator=llm_client.iter_llm_chunks("Hello")
+    results = list(generator)
+    assert results == ["Hello", " ", "World"]
+    assert "".join(results) == "Hello World"
