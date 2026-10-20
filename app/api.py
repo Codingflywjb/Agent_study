@@ -1,27 +1,15 @@
+from idlelib import history
+
 from fastapi import FastAPI,HTTPException,Path
 from app import sqlite_storage
 from app.task_manager import get_all_tasks, find_task_by_id, add_task, update_task_completion, delete_task
 from pydantic import BaseModel,Field,field_validator
 from contextlib import asynccontextmanager
+from typing import Literal
+from practice.llm_client import ask_llm,LLMServiceError
 import logging
 
 logger = logging.getLogger("uvicorn.error")
-
-
-
-class TaskCreate(BaseModel):
-    title: str = Field(min_length=1,max_length=100)
-
-    @field_validator("title")
-    @classmethod
-    def validate_title(cls,value:str)->str:
-        value = value.strip()
-        if not value:
-            raise ValueError("Title is required")
-        return value
-
-class TaskUpdate(BaseModel):
-    completed: bool
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -36,6 +24,65 @@ async def lifespan(app: FastAPI):
     logger.info("应用正在关闭")
 
 app = FastAPI(lifespan=lifespan)
+
+class TaskCreate(BaseModel):
+    title: str = Field(min_length=1,max_length=100)
+
+    @field_validator("title")
+    @classmethod #在class里创建方法
+    def validate_title(cls,value:str)->str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Title is required")
+        return value
+
+class TaskUpdate(BaseModel):
+    completed: bool
+
+class HistoryMessage(BaseModel):
+    role:Literal["user","assistant"]
+    content:str = Field(min_length=1)
+
+    @field_validator("content")
+    @classmethod
+    def validate_content(cls,content:str)->str:
+        content=content.strip()
+        if not content:
+            raise ValueError("内容为空")
+        return content
+
+class ChatRequest(BaseModel):
+    message: str = Field(min_length=1,max_length=2000)#规定message的长度范围
+    history: list[HistoryMessage] = Field(default_factory=list)
+
+    @field_validator("message") #检验消息是否为空,validator是装饰器，后面得跟一个函数定义def
+    @classmethod
+    def validate_message(cls,message:str)->str:
+        message=message.strip()
+        if not message:
+            raise ValueError("消息为空")
+        return message
+
+class ChatResponse(BaseModel):
+    answer:str
+
+@app.post("/chat",response_model=ChatResponse)
+def chat(request:ChatRequest):
+    history_dicts = [
+        msg.model_dump() for msg in request.history
+    ] # model_dump()是 Pydantic 提供的方法，可以把一个 Pydantic 模型对象转换成 Python 字典 dict
+    #msg不是普通字典，而是一个 HistoryMessage 对象。
+
+    try:
+        response= ask_llm(request.message,history_dicts)
+
+        return ChatResponse(answer=response)
+    except LLMServiceError as e:
+        raise HTTPException(status_code=502,detail="模型服务暂时不可用") #用HTTPException将模型服务错误转换成HTTP 502
+
+
+
+
 
 
 @app.get("/")
