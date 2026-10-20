@@ -126,3 +126,72 @@ def test_ask_llm_stream_connection_error(monkeypatch,capsys):
     assert "网络连接异常" in str(exc_info.value)
     assert isinstance(exc_info.value.__cause__, APIConnectionError)
     fake_client.chat.completions.create.assert_called_once()
+
+def test_iter_llm_chunks_success(monkeypatch):
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "fake-test-key")
+    fake_client = MagicMock()
+
+    chunk1 = MagicMock()
+    chunk1.choices[0].delta.content = "你好，"
+
+    chunk2 = MagicMock()
+    chunk2.choices[0].delta.content = "我是DeepSeek！"
+
+    empty_chunk = MagicMock()
+    empty_chunk.choices = []
+
+    fake_stream = iter([chunk1, empty_chunk, chunk2])
+
+    # TODO 1：
+    # 设置 fake_client.chat.completions.create.return_value
+    # 返回 fake_stream
+    fake_client.chat.completions.create.return_value = fake_stream
+
+    # TODO 2：
+    # monkeypatch 替换 llm_client.OpenAI
+    monkeypatch.setattr(llm_client, "OpenAI", MagicMock(return_value=fake_client))
+    # TODO 3：
+    # 调用 iter_llm_chunks("你好")
+    # 注意：此时只是获得生成器
+    generator=llm_client.iter_llm_chunks("你好") #创建生成器
+
+    # 尚未遍历，所以 API 方法没有被调用
+    fake_client.chat.completions.create.assert_not_called()
+    # TODO 4：
+    # 使用 list() 完整消费生成器
+    results = list(generator) #执行生成器函数
+    # 遍历之后，API 方法被调用一次
+    fake_client.chat.completions.create.assert_called_once()
+    # TODO 5：
+    # 断言获得的结果：
+    # ["你好，", "我是DeepSeek！"]
+    assert results == ["你好，", "我是DeepSeek！"]
+    # TODO 6：
+    # 验证 create() 的 stream 参数为 True
+    kwargs = fake_client.chat.completions.create.call_args.kwargs
+    assert kwargs["stream"] is True
+
+def test_iter_llm_chunks_connection_error(monkeypatch):
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "fake-test-key")
+
+    fake_client = MagicMock()
+
+    chunk=MagicMock()
+    chunk.choices[0].delta.content = "部分回答"
+
+    def broken_stream():
+        yield chunk
+        raise APIConnectionError(
+            request=Request("POST","https://api.deepseek.com")
+        )
+
+    fake_client.chat.completions.create.return_value = broken_stream()
+    monkeypatch.setattr(llm_client, "OpenAI", MagicMock(return_value=fake_client))
+    generator=llm_client.iter_llm_chunks("你好")
+    first_chunk = next(generator)
+    assert first_chunk == "部分回答"
+
+    with pytest.raises(llm_client.LLMServiceError) as exc_info:
+       next(generator)
+    assert "网络连接异常" in str(exc_info.value)
+    assert isinstance(exc_info.value.__cause__, APIConnectionError)

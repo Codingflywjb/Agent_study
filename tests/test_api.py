@@ -1,5 +1,6 @@
 import sqlite3
 import pytest
+import json
 from fastapi.testclient import TestClient
 from app.api import app
 from app import storage,sqlite_storage,api
@@ -238,3 +239,45 @@ def test_chat_empty_history_content(monkeypatch):
     response = client.post("/chat",json=payload)
     assert response.status_code == 422
     fake_ask_llm.assert_not_called()
+
+
+
+def test_chat_stream_success(monkeypatch):
+
+    received = {}
+
+    def fake_iter_llm_chunks(user_input,history):
+        received["user_input"] = user_input
+        received["history"] = history
+
+        yield "你好,"
+        yield "我是DeepSeek!"
+
+    monkeypatch.setattr(api,"iter_llm_chunks",fake_iter_llm_chunks)
+
+    payload = {
+        "message":"你好",
+        "history": []
+    }
+    response = client.post("/chat/stream",json=payload)
+    events = response.text.strip().split("\n\n")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    assert len(events) == 3
+    assert events[0].startswith("event:token")
+    assert events[1].startswith("event:token")
+    assert events[2].startswith("event:done")
+
+    assert received["user_input"] == "你好"
+    assert received["history"] == []
+
+def test_chat_stream_invalid_message(monkeypatch):
+    fake_stream = MagicMock()
+    monkeypatch.setattr(api,"iter_llm_chunks",fake_stream)
+    payload = {
+        "message": "    ",
+        "history": []
+    }
+    response = client.post("/chat/stream",json=payload)
+    assert response.status_code == 422
+    fake_stream.assert_not_called()

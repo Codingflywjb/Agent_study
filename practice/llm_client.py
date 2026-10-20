@@ -8,7 +8,7 @@ from practice.llm_messages import (
     build_chat_messages,
     extract_llm_content,
 )
-
+from _collections_abc import Iterator
 
 class LLMServiceError(RuntimeError):
     """大模型服务调用失败。"""
@@ -86,6 +86,45 @@ def ask_llm_stream(user_input: str,history: list[dict] | None = None) -> str:
 
     # TODO 7：保留原有的 SDK 异常处理分支
     # 包括认证、限流、超时、网络和 HTTP 状态错误
+    except APITimeoutError as e:
+        raise LLMServiceError("Deepseek请求超时") from e
+    except AuthenticationError as e:
+        raise LLMServiceError("Deepseek身份认证失败") from e
+    except RateLimitError as e:
+        raise LLMServiceError("Deepseek请求过于频繁") from e
+    except APIConnectionError as e:
+        raise LLMServiceError("Deepseek网络连接异常") from e
+    except APIStatusError as e:
+        raise LLMServiceError(f"Deepseek其他HTTP请求失败，状态码：{e.status_code}") from e
+
+def iter_llm_chunks(user_input: str,history: list[dict] | None = None) -> Iterator[str]: #Iterator[str]表示这个函数返回迭代器，能逐个产生字符串
+    if history is None:
+        history = []
+    messages = build_chat_messages(history,user_input)
+    api_key = os.environ.get("DEEPSEEK_API_KEY")
+    if not api_key:
+        raise ValueError("无法找到api_key")
+    client = OpenAI(
+        api_key=api_key,
+        base_url="https://api.deepseek.com",
+        timeout=30.0,
+        max_retries=0,
+    )
+    try:
+        stream = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=messages,
+            extra_body={
+                "thinking": {"type": "disabled"}
+            },
+            stream=True
+        )
+        for chunk in stream:
+            if not chunk.choices:
+                continue
+            content = chunk.choices[0].delta.content
+            if content:
+                yield content
     except APITimeoutError as e:
         raise LLMServiceError("Deepseek请求超时") from e
     except AuthenticationError as e:

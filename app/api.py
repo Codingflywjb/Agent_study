@@ -1,12 +1,13 @@
 from idlelib import history
-
+import json
+from fastapi.responses import StreamingResponse
 from fastapi import FastAPI,HTTPException,Path
 from app import sqlite_storage
 from app.task_manager import get_all_tasks, find_task_by_id, add_task, update_task_completion, delete_task
 from pydantic import BaseModel,Field,field_validator
 from contextlib import asynccontextmanager
 from typing import Literal
-from practice.llm_client import ask_llm,LLMServiceError
+from practice.llm_client import ask_llm,LLMServiceError,iter_llm_chunks
 import logging
 
 logger = logging.getLogger("uvicorn.error")
@@ -147,3 +148,22 @@ def remove_task_api(task_id:int=Path(gt=0)):
     result=sqlite_storage.delete_task(task_id)
     if not result:
         raise HTTPException(status_code=404, detail="Task not found")
+
+@app.post("/chat/stream")
+def chat_stream(request:ChatRequest):
+    history_dicts = [
+        msg.model_dump() for msg in request.history
+    ]
+    def event_generator():
+        try:
+            response = iter_llm_chunks(request.message,history_dicts)
+            for content in response:
+                data=json.dumps(
+                    {"delta":content},
+                    ensure_ascii=False
+                )
+                yield f'event:token\ndata:{data}\n\n'
+            yield "event:done\ndata:{}\n\n"
+        except LLMServiceError:
+            yield 'event:error\ndata:{"detail": "模型服务暂时不可用"}\n\n'
+    return StreamingResponse(event_generator(),media_type="text/event-stream")
