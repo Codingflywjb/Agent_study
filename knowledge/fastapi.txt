@@ -1,0 +1,5 @@
+FastAPI 是一个基于 Python 类型标注的 Web 框架。
+
+它支持使用 Pydantic 校验请求参数，并能够自动生成 OpenAPI 接口文档。
+
+在 Agent_study 项目中，FastAPI 用于提供任务管理接口和大模型聊天接口。

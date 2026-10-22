@@ -1,0 +1,5 @@
+SSE 全称 Server-Sent Events，是一种通过 HTTP 向客户端持续发送事件的技术。
+
+在 Agent_study 项目中，POST /chat/stream 使用 FastAPI StreamingResponse 实现 SSE。
+
+该接口使用 token 事件发送文本片段，done 事件表示正常结束，error 事件表示生成失败。
