@@ -17,3 +17,4 @@ __pycache__/
 data/*.db
 data/*.db-*
 data/tasks.json
+data/rag_index.json
