@@ -140,3 +140,50 @@ def test_ask_rag_invalid_k():
             embedding_model=MagicMock(),
             k=-1
         )
+
+def test_ask_rag_low_similarity(monkeypatch):
+    retrieved_chunks = [
+        {
+            "source": "sse.txt",
+            "chunk_id": 0,
+            "content": "SSE 支持服务器推送事件",
+            "score": 0.2806
+        },
+        {
+            "source": "fastapi.txt",
+            "chunk_id": 0,
+            "content": "FastAPI 支持 StreamingResponse",
+            "score": 0.2201
+        }
+    ]
+    mock_search = MagicMock(return_value=retrieved_chunks)
+    mock_prompt = MagicMock()
+    mock_llm = MagicMock()
+
+    monkeypatch.setattr(
+        rag_answer,
+        "search_cached_knowledge",
+        mock_search
+    )
+    monkeypatch.setattr(
+        rag_answer,
+        "build_rag_prompt",
+        mock_prompt
+    )
+    monkeypatch.setattr(
+        rag_answer,
+        "ask_llm",
+        mock_llm
+    )
+    result = rag_answer.ask_rag(
+        question="唐朝是哪一年建立的？",
+        index_path="test_index.json",
+        embedding_model=MagicMock(),
+        k=2,
+        min_score=0.45
+    )
+    assert result["sources"] == []
+    assert "没有足够相关的参考资料" in result["answer"]
+    mock_prompt.assert_not_called()
+    mock_search.assert_called_once()
+    mock_llm.assert_not_called()
