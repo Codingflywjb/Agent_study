@@ -3,6 +3,7 @@ from functools import lru_cache
 from pathlib import Path as FilePath
 from sentence_transformers import SentenceTransformer
 from practice.rag_answer import ask_rag
+from openai import APITimeoutError,APIConnectionError
 import json
 from fastapi.responses import StreamingResponse
 from fastapi import FastAPI,HTTPException
@@ -125,10 +126,25 @@ def rag_ask(request: RagAskRequest):
             status_code=503,
             detail="索引不存在"
         )
-
-    model = get_embedding_model()
-
-    result = ask_rag(question=request.question,index_path=RAG_INDEX_PATH,embedding_model=model,k=request.k)
+    try:
+        model = get_embedding_model()
+    except Exception:
+        raise HTTPException(
+            status_code=503,
+            detail="Embedding 模型暂时不可用"
+        )
+    try:
+        result = ask_rag(question=request.question,index_path=RAG_INDEX_PATH,embedding_model=model,k=request.k)
+    except APITimeoutError as exc:
+        raise HTTPException(
+            status_code=504,
+            detail="大模型服务响应超时"
+        )
+    except APIConnectionError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="大模型服务暂时不可用"
+        )
 
     return result
 
