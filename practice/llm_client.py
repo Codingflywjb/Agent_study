@@ -13,6 +13,12 @@ from _collections_abc import Iterator
 class LLMServiceError(RuntimeError):
     """大模型服务调用失败。"""
 
+class LLMTimeoutError(LLMServiceError):
+    pass
+
+class LLMConnectionError(LLMServiceError):
+    pass
+
 class LLMConfigurationError(ValueError):
     """LLM 服务配置不正确。"""
 
@@ -45,13 +51,13 @@ def ask_llm(user_input: str,history:list[dict] | None = None) -> str:
             stream=False
         )
     except APITimeoutError as e:
-        raise LLMServiceError("Deepseek请求超时") from e
+        raise LLMTimeoutError("Deepseek请求超时") from e
     except AuthenticationError as e:
         raise LLMServiceError("Deepseek身份认证失败") from e
     except RateLimitError as e:
         raise LLMServiceError("Deepseek请求过于频繁") from e
     except APIConnectionError as e:
-        raise LLMServiceError("Deepseek网络连接异常") from e
+        raise LLMConnectionError("Deepseek网络连接异常") from e
     except APIStatusError as e:
         raise LLMServiceError(f"Deepseek其他HTTP请求失败，状态码：{e.status_code}") from e
 

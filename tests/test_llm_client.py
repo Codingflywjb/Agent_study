@@ -1,7 +1,8 @@
 from unittest.mock import MagicMock
 import pytest
 from practice import llm_client
-from openai import APIConnectionError, OpenAI
+from practice.llm_client import LLMTimeoutError, LLMConnectionError,ask_llm
+from openai import APIConnectionError, OpenAI, APITimeoutError
 from httpx2 import Request
 
 def test_ask_llm_success(monkeypatch):
@@ -239,3 +240,38 @@ def test_iter_llm_chunks_preserves_spaces(monkeypatch):
     results = list(generator)
     assert results == ["Hello", " ", "World"]
     assert "".join(results) == "Hello World"
+
+def test_ask_llm_timeout_conversion(monkeypatch):
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.side_effect = (
+        APITimeoutError(
+            request=MagicMock()
+        )
+    )
+    monkeypatch.setattr(llm_client,"_create_deepseek_client",MagicMock(return_value=mock_client))
+    with pytest.raises(LLMTimeoutError) as exc_info:
+        ask_llm("你好")
+
+    assert isinstance(
+        exc_info.value.__cause__,
+        APITimeoutError
+    )
+    mock_client.chat.completions.create.assert_called_once()
+
+def test_ask_llm_connection_conversion(monkeypatch):
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.side_effect = (
+        APIConnectionError(
+            request=MagicMock()
+        )
+    )
+    monkeypatch.setattr(llm_client,"_create_deepseek_client",MagicMock(return_value=mock_client))
+    with pytest.raises(LLMConnectionError) as exc_info:
+        ask_llm("你好")
+
+    assert isinstance(
+        exc_info.value.__cause__,
+        APIConnectionError
+    )
+    mock_client.chat.completions.create.assert_called_once()
+

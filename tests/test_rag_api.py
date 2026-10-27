@@ -1,8 +1,11 @@
 from unittest.mock import MagicMock
 from urllib.request import Request
-
+from practice.llm_client import (
+    LLMTimeoutError,
+    LLMConnectionError
+)
 from fastapi.testclient import TestClient
-from openai import APITimeoutError, APIConnectionError
+from openai import APITimeoutError,APIConnectionError
 
 from app import api
 
@@ -264,9 +267,7 @@ def test_rag_ask_llm_timeout(monkeypatch, tmp_path):
     fake_model = object()
     mock_model = MagicMock(return_value=fake_model)
     mock_rag = MagicMock(
-        side_effect=APITimeoutError(
-            request=MagicMock()
-        )
+        side_effect=LLMTimeoutError("Deepseek请求超时")
     )
     monkeypatch.setattr(
         api,
@@ -309,7 +310,7 @@ def test_rag_ask_llm_connection_error(monkeypatch, tmp_path):
     )
     fake_model = object()
     mock_model = MagicMock(return_value=fake_model)
-    mock_rag = MagicMock(side_effect=APIConnectionError(request=MagicMock()))
+    mock_rag = MagicMock(side_effect=LLMConnectionError("Deepseek连接超时"))
     monkeypatch.setattr(
         api,
         "get_embedding_model",

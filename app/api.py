@@ -14,6 +14,7 @@ from pydantic import BaseModel,Field,field_validator
 from contextlib import asynccontextmanager
 from typing import Literal
 from practice.llm_client import ask_llm,LLMServiceError,iter_llm_chunks,LLMConfigurationError
+from practice.llm_client import LLMTimeoutError, LLMConnectionError
 import logging
 
 
@@ -135,12 +136,12 @@ def rag_ask(request: RagAskRequest):
         )
     try:
         result = ask_rag(question=request.question,index_path=RAG_INDEX_PATH,embedding_model=model,k=request.k)
-    except APITimeoutError as exc:
+    except LLMTimeoutError as exc:
         raise HTTPException(
             status_code=504,
             detail="大模型服务响应超时"
         )
-    except APIConnectionError as exc:
+    except LLMConnectionError as exc:
         raise HTTPException(
             status_code=502,
             detail="大模型服务暂时不可用"
