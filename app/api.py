@@ -1,7 +1,12 @@
 from idlelib import history
+from functools import lru_cache
+from pathlib import Path as FilePath
+from sentence_transformers import SentenceTransformer
+from practice.rag_answer import ask_rag
 import json
 from fastapi.responses import StreamingResponse
-from fastapi import FastAPI,HTTPException,Path
+from fastapi import FastAPI,HTTPException
+from fastapi import Path
 from app import sqlite_storage
 from app.task_manager import get_all_tasks, find_task_by_id, add_task, update_task_completion, delete_task
 from pydantic import BaseModel,Field,field_validator
@@ -9,6 +14,7 @@ from contextlib import asynccontextmanager
 from typing import Literal
 from practice.llm_client import ask_llm,LLMServiceError,iter_llm_chunks,LLMConfigurationError
 import logging
+
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -25,6 +31,24 @@ async def lifespan(app: FastAPI):
     logger.info("应用正在关闭")
 
 app = FastAPI(lifespan=lifespan)
+
+@lru_cache(maxsize=1)
+def get_embedding_model() -> SentenceTransformer:
+    return SentenceTransformer(
+        "BAAI/bge-small-zh-v1.5",
+        device="cpu"
+    )
+
+PROJECT_ROOT = FilePath(__file__).resolve().parents[1]
+RAG_INDEX_PATH = PROJECT_ROOT / "data" / "rag_index.json"
+
+class RagAskRequest(BaseModel):
+    question: str = Field(min_length=1)
+    k: int = Field(default=2, ge=1, le=10)
+
+class RagAskResponse(BaseModel):
+    answer: str
+    sources: list[str]
 
 class TaskCreate(BaseModel):
     title: str = Field(min_length=1,max_length=100)
@@ -86,7 +110,27 @@ def chat(request:ChatRequest):
             detail="模型服务暂时不可用"
         )
 
+@app.post("/rag/ask", response_model=RagAskResponse)
+def rag_ask(request: RagAskRequest):
 
+
+    if not request.question.strip():
+        raise HTTPException(
+            status_code=422,
+            detail="问题不能为空"
+        )
+
+    if not RAG_INDEX_PATH.is_file():
+        raise HTTPException(
+            status_code=503,
+            detail="索引不存在"
+        )
+
+    model = get_embedding_model()
+
+    result = ask_rag(question=request.question,index_path=RAG_INDEX_PATH,embedding_model=model,k=request.k)
+
+    return result
 
 
 
