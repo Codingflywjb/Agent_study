@@ -8,6 +8,8 @@ import json
 from fastapi.responses import StreamingResponse
 from fastapi import FastAPI,HTTPException
 from fastapi import Path
+from fastapi import Depends
+from app.config import RagSettings,load_rag_settings
 from app import sqlite_storage
 from app.task_manager import get_all_tasks, find_task_by_id, add_task, update_task_completion, delete_task
 from pydantic import BaseModel,Field,field_validator
@@ -34,12 +36,15 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
-@lru_cache(maxsize=1)
-def get_embedding_model() -> SentenceTransformer:
+@lru_cache(maxsize=2)
+def get_embedding_model(model_name : str) -> SentenceTransformer:
     return SentenceTransformer(
-        "BAAI/bge-small-zh-v1.5",
+        model_name,
         device="cpu"
     )
+
+def get_rag_settings() -> RagSettings:
+    return load_rag_settings()
 
 PROJECT_ROOT = FilePath(__file__).resolve().parents[1]
 RAG_INDEX_PATH = PROJECT_ROOT / "data" / "rag_index.json"
@@ -113,39 +118,42 @@ def chat(request:ChatRequest):
         )
 
 @app.post("/rag/ask", response_model=RagAskResponse)
-def rag_ask(request: RagAskRequest):
-
-
+def rag_ask(
+        request: RagAskRequest,
+        settings:RagSettings = Depends(get_rag_settings)
+):
     if not request.question.strip():
         raise HTTPException(
             status_code=422,
             detail="问题不能为空"
         )
 
-    if not RAG_INDEX_PATH.is_file():
+    if not settings.index_path.is_file():
         raise HTTPException(
             status_code=503,
-            detail="索引不存在"
+            detail="文件不存在"
         )
+
     try:
-        model = get_embedding_model()
+        model = get_embedding_model(settings.embedding_model_name)
     except Exception:
         raise HTTPException(
             status_code=503,
             detail="Embedding 模型暂时不可用"
         )
+
     try:
-        result = ask_rag(question=request.question,index_path=RAG_INDEX_PATH,embedding_model=model,k=request.k)
+        result = ask_rag(question=request.question,index_path=settings.index_path,embedding_model=model,k=request.k,min_score=settings.min_score)
     except LLMTimeoutError as exc:
         raise HTTPException(
             status_code=504,
             detail="大模型服务响应超时"
-        )
+        ) from exc
     except LLMConnectionError as exc:
         raise HTTPException(
             status_code=502,
             detail="大模型服务暂时不可用"
-        )
+        ) from exc
 
     return result
 
