@@ -143,7 +143,13 @@ def rag_ask(
         )
 
     try:
-        result = ask_rag(question=request.question,index_path=settings.index_path,embedding_model=model,k=request.k,min_score=settings.min_score)
+        result = ask_rag(question=request.question,
+                         index_path=settings.index_path,
+                         embedding_model=model,
+                         k=request.k,
+                         min_score=settings.min_score,
+                         expected_model_name=settings.embedding_model_name
+                         )
     except LLMTimeoutError as exc:
         raise HTTPException(
             status_code=504,

@@ -1,3 +1,5 @@
+from idlelib import query
+
 import pytest
 from unittest.mock import MagicMock
 
@@ -187,3 +189,71 @@ def test_ask_rag_low_similarity(monkeypatch):
     mock_prompt.assert_not_called()
     mock_search.assert_called_once()
     mock_llm.assert_not_called()
+
+def test_ask_rag_uses_v2(monkeypatch):
+    fake_model=object()
+    fake_chunks=[
+        {
+            "source": "sse.txt",
+            "chunk_id": 0,
+            "content": "SSE 的 done 事件表示正常结束",
+            "score": 0.95
+        }
+    ]
+    mock_v1 = MagicMock()
+    mock_v2 = MagicMock(return_value=fake_chunks)
+    mock_llm = MagicMock(return_value="SSE 是服务器发送事件。")
+    monkeypatch.setattr(rag_answer, "search_cached_knowledge", mock_v1)
+    monkeypatch.setattr(rag_answer,"search_cached_knowledge_v2", mock_v2)
+    monkeypatch.setattr(rag_answer,"ask_llm", mock_llm)
+    result = rag_answer.ask_rag(
+        question="什么是SSE？",
+        index_path="test_index.json",
+        embedding_model=fake_model,
+        k=2,
+        min_score=0.45,
+        expected_model_name="test-model"
+    )
+    mock_v1.assert_not_called()
+    mock_v2.assert_called_once_with(
+        query="什么是SSE？",
+        index_path="test_index.json",
+        model=fake_model,
+        k=2,
+        expected_model_name="test-model"
+    )
+    mock_llm.assert_called_once()
+    assert result["answer"] == "SSE 是服务器发送事件。"
+
+
+def test_ask_rag_v2_model_mismatch(monkeypatch):
+    fake_model = object()
+
+    mock_v2 = MagicMock(
+        side_effect=ValueError("Invalid embedding_model_name")
+    )
+    mock_llm = MagicMock()
+    monkeypatch.setattr(rag_answer, "search_cached_knowledge_v2", mock_v2)
+    monkeypatch.setattr(rag_answer,"ask_llm", mock_llm)
+
+    with pytest.raises(ValueError,match="Invalid embedding_model_name"):
+        rag_answer.ask_rag(
+            question="什么是SSE？",
+            index_path="test_index.json",
+            embedding_model=fake_model,
+            k=2,
+            min_score=0.45,
+            expected_model_name="model-B"
+        )
+
+    mock_v2.assert_called_once_with(
+        query="什么是SSE？",
+        index_path="test_index.json",
+        model=fake_model,
+        k=2,
+        expected_model_name="model-B"
+    )
+    mock_llm.assert_not_called()
+
+
+

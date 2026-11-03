@@ -84,7 +84,8 @@ def test_rag_ask_success(monkeypatch, rag_settings_override):
         index_path=index_path,
         embedding_model=fake_model,
         k=2,
-        min_score= 0.60
+        min_score= 0.60,
+        expected_model_name=rag_settings_override.embedding_model_name
     )
 
 
@@ -332,7 +333,8 @@ def test_rag_ask_llm_timeout(monkeypatch, tmp_path):
         index_path=index_path,
         embedding_model=fake_model,
         k=2,
-        min_score=0.60
+        min_score=0.60,
+        expected_model_name=fake_settings.embedding_model_name
     )
 
 
@@ -402,3 +404,89 @@ def test_embedding_model_cache(monkeypatch):
         mock_constructor.assert_any_call("fake_model_b", device="cpu")
     finally:
         api.get_embedding_model.cache_clear()
+
+def test_rag_ask_passes_embedding_model_name(monkeypatch, tmp_path):
+    index_path = tmp_path / "index.json"
+    index_path.write_text(
+        '{"metadata": {"schema_version": 2, '
+        '"embedding_model_name": "test-model", '
+        '"embedding_dim": 3}, "chunks": []}',
+        encoding="utf-8"
+    )
+    fake_settings = RagSettings(
+        embedding_model_name="test-model",
+        index_path=tmp_path / "index.json",
+        min_score=0.45
+    )
+    api.app.dependency_overrides[api.get_rag_settings] = lambda: fake_settings
+    fake_model = object()
+    monkeypatch.setattr(
+        api,
+        "get_embedding_model",
+        MagicMock(return_value=fake_model)
+    )
+    mock_ask_rag = MagicMock(
+        return_value={
+            "answer":"SSE是服务器发送事件。",
+            "sources":[]
+        }
+    )
+    monkeypatch.setattr(
+        api,
+        "ask_rag",
+        mock_ask_rag
+    )
+
+    try:
+        client=TestClient(api.app)
+        response = client.post(
+            "/rag/ask",
+            json={
+                "question":"什么是SSE？",
+                "k": 2
+            }
+        )
+        assert response.status_code == 200
+        mock_ask_rag.assert_called_once()
+        kwargs = mock_ask_rag.call_args.kwargs
+        assert kwargs["expected_model_name"] == "test-model"
+        assert kwargs["embedding_model"] is fake_model
+    finally:
+        api.app.dependency_overrides.pop(
+            api.get_rag_settings,
+            None
+        )
+
+def test_rag_ask_v2_model_mismatch_returns_503(monkeypatch, rag_settings_override):
+    fake_model = object()
+
+    mock_model = MagicMock(return_value=fake_model)
+
+    mock_ask_rag = MagicMock(
+        side_effect=ValueError("Invalid embedding_model_name")
+    )
+
+    monkeypatch.setattr(
+        api,
+        "get_embedding_model",
+        mock_model
+    )
+
+    monkeypatch.setattr(
+        api,
+        "ask_rag",
+        mock_ask_rag
+    )
+
+    with pytest.raises(ValueError, match="Invalid embedding_model_name"):
+        with TestClient(api.app) as client:
+            response = client.post(
+                "/rag/ask",
+                json={
+                     "question": "SSE 的 done 事件表示什么？",
+                    "k": 2
+                }
+            )
+        assert response.status_code == 503,response.text
+    mock_ask_rag.assert_called_once()
+
