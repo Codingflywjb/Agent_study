@@ -4,6 +4,7 @@ from practice.agent_tools import (
     validate_tool_call
 )
 from practice.agent_tool_messages import build_tool_result_message
+from practice.agent_tool_errors import safe_simulate_tool_call
 
 def decide_next_action(assistant_message)->str:
     tool_calls = assistant_message.tool_calls or []
@@ -58,12 +59,7 @@ def run_agent_loop(
 
         for tool_call in assistant_message.tool_calls:
             tool_call_dict = sdk_tool_call_to_dict(tool_call)
-            tool_name,arguments = validate_tool_call(tool_call_dict)
-            fake_result ={
-                "status":"simulated",
-                "title":arguments["title"],
-                "saved":False
-            }
-            tool_message=build_tool_result_message(tool_call_id=tool_call.id,result=fake_result)
+            result=safe_simulate_tool_call(tool_call_dict)
+            tool_message=build_tool_result_message(tool_call_id=tool_call.id,result=result)
             messages.append(tool_message)
     return "已达到最大请求轮数，任务执行状态未确认。"
