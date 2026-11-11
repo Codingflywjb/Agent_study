@@ -34,7 +34,8 @@ if __name__ == "__main__":
     initial_state= {
         "user_input":"帮我添加任务：学习 FastAPI",
         "intent":"",
-        "dry_run":True
+        "dry_run":True,
+        "trace": []
     }
     final_state=graph.invoke(initial_state)
     print(final_state["intent"])
