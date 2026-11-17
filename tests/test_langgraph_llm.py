@@ -24,7 +24,8 @@ from practice.langgraph_llm import (
     langchain_tool_call_to_deepseek,
     route_after_llm,
     tool_node,
-    build_agent_graph
+    build_agent_graph,
+    count_tool_messages
 )
 import practice.langgraph_llm as langgraph_llm
 
@@ -614,3 +615,152 @@ def test_build_agent_graph_recursion_limit(monkeypatch):
         call.kwargs["dry_run"] is True
         for call in mock_executor.call_args_list
     )
+
+def test_count_tool_messages_mixed():
+    state = {
+        "messages":[
+            HumanMessage(content="你好"),
+            AIMessage(content="你好！"),
+            ToolMessage(
+                content="任务添加成功",
+                tool_call_id="call_1"
+            ),
+            AIMessage(content="任务已处理")
+        ]
+    }
+    result = count_tool_messages(state)
+    assert result == 1
+
+def test_count_tool_messages_empty():
+    state = {
+        "messages": []
+    }
+    assert count_tool_messages(state) == 0
+
+def test_count_tool_messages_multiple():
+    state = {
+        "messages": [
+            HumanMessage(content="添加三个任务"),
+            ToolMessage(
+                content="任务添加成功",
+                tool_call_id="call_1"
+            ),
+            AIMessage(content="第一个任务已处理"),
+            ToolMessage(
+                content="任务添加成功",
+                tool_call_id="call_2"
+            ),
+            ToolMessage(
+                content="任务添加成功",
+                tool_call_id="call_3"
+            ),
+            AIMessage(content="任务已全部处理完成")
+        ]
+    }
+    assert count_tool_messages(state) == 3
+
+def test_tool_node_limit_exceeded(monkeypatch):
+    mock_executor = MagicMock()
+    monkeypatch.setattr(langgraph_llm,"run_add_task_tool",mock_executor)
+
+    state = {
+        "messages":[
+            HumanMessage(content="添加三个任务"),
+            ToolMessage(
+                content="任务添加成功",
+                tool_call_id="call_1"
+            ),
+            AIMessage(content="第一个任务已处理"),
+            ToolMessage(
+                content="任务添加成功",
+                tool_call_id="call_2"
+            ),
+            ToolMessage(
+                content="任务添加成功",
+                tool_call_id="call_3"
+            ),
+            AIMessage(content="任务已全部处理完成",tool_calls=[{"id":"call_4","name":"add_task","args":{"title": "任务"}}])
+        ]
+    }
+    with pytest.raises(ValueError,match="tool call limit exceeded"):
+        tool_node(state)
+
+    mock_executor.assert_not_called()
+
+def test_tool_node_limit_allows_last_call(monkeypatch):
+    mock_executor = MagicMock(
+        return_value={
+            "status": "simulated",
+            "saved": False
+        }
+    )
+
+    monkeypatch.setattr(
+        langgraph_llm,
+        "run_add_task_tool",
+        mock_executor
+    )
+
+    state = {
+        "messages": [
+            HumanMessage(content="添加三个任务"),
+            ToolMessage(
+                content="任务1已处理",
+                tool_call_id="call_1"
+            ),
+            ToolMessage(
+                content="任务2已处理",
+                tool_call_id="call_2"
+            ),
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "id": "call_3",
+                        "name": "add_task",
+                        "args": {"title": "学习 LangGraph"}
+                    }
+                ]
+            )
+        ]
+    }
+
+    result = tool_node(state)
+
+    messages = result["messages"]
+
+    assert len(messages) == 1
+    assert isinstance(messages[0], ToolMessage)
+    assert messages[0].tool_call_id == "call_3"
+
+    assert json.loads(messages[0].content) == {
+        "status": "simulated",
+        "saved": False
+    }
+
+    mock_executor.assert_called_once()
+    assert mock_executor.call_args.kwargs["dry_run"] is True
+
+def test_tool_node_executor_error(monkeypatch):
+    mock_executor = MagicMock(side_effect = RuntimeError("database connection failed"))
+    monkeypatch.setattr(
+        langgraph_llm,
+        "run_add_task_tool",
+        mock_executor
+    )
+    state = {
+        "messages":[
+            AIMessage(content="",tool_calls=[{
+                "id":"call_1",
+                "name":"add_task",
+                "args":{"title": "学习 LangGraph"}
+            }])
+        ]
+    }
+    result = tool_node(state)["messages"][0]
+    content = json.loads(result.content)
+    assert isinstance(result,ToolMessage)
+    assert content["status"] == "error"
+    assert content["message"] == "tool execution failed"
+    assert result.tool_call_id == "call_1"
+    mock_executor.assert_called_once()

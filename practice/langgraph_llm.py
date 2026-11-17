@@ -3,6 +3,7 @@ from langgraph.graph import MessagesState,StateGraph,START,END
 from practice.agent_tools import sdk_tool_call_to_dict
 from practice.agent_tool_executor import run_add_task_tool
 import json
+MAX_TOOL_CALLS = 3
 
 def to_deepseek_messages(
         messages:list[BaseMessage]
@@ -154,9 +155,17 @@ def tool_node(state:MessagesState)->dict:
         raise ValueError("last message is not AImessage")
     if len(last_message.tool_calls) != 1:
         raise ValueError("expected exactly one tool call")
+    if count_tool_messages(state) >= MAX_TOOL_CALLS:
+        raise ValueError("tool call limit exceeded")
     tool_call_langchain = last_message.tool_calls[0]
     tool_calls_dict = langchain_tool_call_to_deepseek(tool_call_langchain)
-    result=run_add_task_tool(tool_calls_dict,dry_run=True)
+    try:
+        result=run_add_task_tool(tool_calls_dict,dry_run=True)
+    except Exception:
+        result = {
+        "status": "error",
+        "message": "tool execution failed"
+    }
     content = json.dumps(result,ensure_ascii=False)
     tool_message = ToolMessage(content=content,tool_call_id=tool_call_langchain["id"])
     return {"messages":[tool_message]}
@@ -171,3 +180,10 @@ def build_agent_graph(client,tools:list[dict]):
     builder.add_edge("tool_node","llm")
     graph=builder.compile()
     return graph
+
+def count_tool_messages(state:MessagesState) -> int:
+    count = 0
+    for message in state["messages"]:
+        if isinstance(message,ToolMessage):
+            count += 1
+    return count
