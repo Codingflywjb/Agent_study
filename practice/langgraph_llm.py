@@ -2,6 +2,7 @@ from langchain_core.messages import BaseMessage,AIMessage,ToolMessage
 from langgraph.graph import MessagesState,StateGraph,START,END
 from practice.agent_tools import sdk_tool_call_to_dict
 from practice.agent_tool_executor import run_add_task_tool
+from langgraph.checkpoint.memory import InMemorySaver
 import json
 MAX_TOOL_CALLS = 3
 
@@ -170,7 +171,7 @@ def tool_node(state:MessagesState)->dict:
     tool_message = ToolMessage(content=content,tool_call_id=tool_call_langchain["id"])
     return {"messages":[tool_message]}
 
-def build_agent_graph(client,tools:list[dict]):
+def build_agent_graph(client,tools:list[dict],checkpointer=None):
     builder = StateGraph(MessagesState)
     node = make_llm_node(client, tools=tools)
     builder.add_node("llm",node)
@@ -178,7 +179,7 @@ def build_agent_graph(client,tools:list[dict]):
     builder.add_edge(START,"llm")
     builder.add_conditional_edges("llm",route_after_llm, {"tool":"tool_node","end":END})
     builder.add_edge("tool_node","llm")
-    graph=builder.compile()
+    graph=builder.compile(checkpointer=checkpointer)
     return graph
 
 def count_tool_messages(state:MessagesState) -> int:

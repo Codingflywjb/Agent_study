@@ -10,7 +10,7 @@ from langchain_core.messages import (
     AIMessage,
     ToolMessage, ChatMessage
 )
-
+from langgraph.checkpoint.memory import InMemorySaver
 
 from practice.agent_tools import add_task_tool
 from practice.langgraph_llm import (
@@ -764,3 +764,93 @@ def test_tool_node_executor_error(monkeypatch):
     assert content["message"] == "tool execution failed"
     assert result.tool_call_id == "call_1"
     mock_executor.assert_called_once()
+
+def test_agent_graph_conversation_memory():
+    mock_client = MagicMock()
+    response = MagicMock()
+    response.choices[0].message.content = "收到"
+    response.choices[0].message.tool_calls = None
+    mock_client.chat.completions.create.return_value = response
+
+    memory = InMemorySaver()
+
+    graph=build_agent_graph(client=mock_client,tools=[],checkpointer=memory)
+
+    config = {
+        "configurable": {
+            "thread_id":"study-001"
+        }
+    }
+    state = {
+        "messages" : [
+            HumanMessage(content="我正在学习 LangGraph")
+        ]
+    }
+    graph.invoke(state,config=config)
+    second_state = {
+        "messages" : [
+            HumanMessage(content="我刚刚说自己在学习什么？")
+        ]
+    }
+
+    final_state =graph.invoke(second_state,config=config)
+
+    assert  len(final_state["messages"]) == 4
+    messages = final_state["messages"]
+
+    assert messages[0].content == "我正在学习 LangGraph"
+    assert messages[2].content == "我刚刚说自己在学习什么？"
+
+def test_agent_graph_thread_isolation():
+    mock_client = MagicMock()
+    response = MagicMock()
+    response.choices[0].message.content = "收到"
+    response.choices[0].message.tool_calls = None
+    mock_client.chat.completions.create.return_value = response
+
+    memory = InMemorySaver()
+    graph = build_agent_graph(client=mock_client,tools=[],checkpointer=memory)
+    config_a ={
+        "configurable" : {
+            "thread_id" : "A"
+        }
+    }
+    config_b = {
+        "configurable": {
+            "thread_id": "B"
+        }
+    }
+    first_state = {
+        "messages" : [
+            HumanMessage(content="我正在学习 Python")
+        ]
+    }
+    graph.invoke(first_state,config=config_a)
+    second_state = {
+        "messages" : [
+            HumanMessage(content="我正在学习 Java")
+        ]
+    }
+    state_b=graph.invoke(second_state,config=config_b)
+    third_state = {
+        "messages": [
+            HumanMessage(content="我刚刚说自己在学习什么？")
+        ]
+    }
+    final_state = graph.invoke(third_state,config=config_a)
+
+    assert len(state_b["messages"]) == 2
+    assert len(final_state["messages"]) == 4
+    messages_final = final_state["messages"]
+    assert messages_final[0].content == "我正在学习 Python"
+    assert messages_final[1].content == "收到"
+    assert messages_final[3].content == "收到"
+    assert messages_final[2].content == "我刚刚说自己在学习什么？"
+    assert state_b["messages"][0].content == "我正在学习 Java"
+
+    assert all(
+        message.content != "我正在学习 Java"
+        for message in final_state["messages"]
+    )
+
+
